@@ -1,5 +1,5 @@
-from odoo import api, fields, models
-from odoo.exceptions import ValidationError
+from odoo import _, api, fields, models
+from odoo.exceptions import RedirectWarning, ValidationError
 
 
 class AccountFiscalPosition(models.Model):
@@ -11,6 +11,8 @@ class AccountFiscalPosition(models.Model):
         # TODO deberiamos unificar mucho de este codigo con _get_tax_domain, _compute_withholdings y _check_tax_group_overlap
         self.ensure_one()
         taxes = self.env["account.tax"]
+        # garantizamos de siempre evaluar segun commercial partner que es donde se guardan y ven los impuestos
+        partner = partner.commercial_partner_id
         for fp_tax in self.l10n_ar_tax_ids.filtered(lambda x: x.tax_type == tax_type):
             domain = self.env["l10n_ar.partner.tax"]._check_company_domain(company)
             domain += [("tax_id.tax_group_id", "=", fp_tax.default_tax_id.tax_group_id.id)]
@@ -35,6 +37,24 @@ class AccountFiscalPosition(models.Model):
             # agregamos taxes para grupos de impuestos que no estaban seteados en el partner
             if not partner_tax:
                 partner_tax = fp_tax._get_missing_taxes(partner, date)
+            if len(partner_tax) > 1:
+                raise RedirectWarning(
+                    message=_(
+                        "El contacto '%(name)s' (id: %(id)s) tiene múltiples impuestos vigentes para el grupo "
+                        "de impuestos '%(tax_group)s' en la fecha '%(date)s' y compañía '%(company)s'. Ver "
+                        "solapa 'Contabilidad' de la vista formulario del contacto.",
+                        name=partner.name,
+                        id=partner.id,
+                        tax_group=fp_tax.default_tax_id.tax_group_id.name,
+                        date=date,
+                        company=company.name,
+                    ),
+                    action=partner.get_formview_action(),
+                    button_text=_("Editar contacto"),
+                )
+            if partner_tax and partner_tax.l10n_ar_tax_type != "earnings_scale" and partner_tax.amount == 0:
+                # se eliminan todos los impuestos cuyo monto sea 0, excepto los de tipo "earnings_scale"
+                continue
             taxes |= partner_tax
         return taxes
 
@@ -54,3 +74,40 @@ class AccountFiscalPosition(models.Model):
                     % ", ".join(wrong_tax_type_records.default_tax_id.mapped("name"))
                 )
             )
+
+    def _get_fpos_ranking_functions(self, partner):
+        """
+        Overrides the `_get_fpos_ranking_functions` method to include a custom ranking
+        function for fiscal positions based on Argentine withholding taxes.
+        If the context does not include 'l10n_ar_withholding' or the company's country
+        is not Argentina (country code "AR"), the method falls back to the parent class
+        implementation.
+        When the context includes 'l10n_ar_withholding' and the company's country is
+        Argentina, the method adds a ranking function that prioritizes fiscal positions
+        containing taxes of type 'withholding' (`l10n_ar_tax_ids`).
+        For normal fiscal positions in Argentina (not in withholding context), it excludes
+        fiscal positions that are only for withholdings (no tax_ids, no account_ids, have
+        withholding taxes but no perception taxes).
+        Args:
+            partner (res.partner): The partner for whom the fiscal position ranking
+                functions are being determined.
+        """
+        if self._context.get("l10n_ar_withholding") and self.env.company.country_id.code == "AR":
+            return [
+                ("l10n_ar_tax_ids", lambda fpos: (any(tax.tax_type == "withholding" for tax in fpos.l10n_ar_tax_ids)))
+            ] + super()._get_fpos_ranking_functions(partner)
+        elif not self._context.get("l10n_ar_withholding") and self.env.company.country_id.code == "AR":
+
+            def exclude_withholding_only_fpos(fpos):
+                has_withholding = any(tax.tax_type == "withholding" for tax in fpos.l10n_ar_tax_ids)
+                has_perception = any(tax.tax_type == "perception" for tax in fpos.l10n_ar_tax_ids)
+                is_only_withholding = (
+                    not fpos.tax_ids and not fpos.account_ids and has_withholding and not has_perception
+                )
+                return 0 if is_only_withholding else 1
+
+            return [("exclude_withholding_only", exclude_withholding_only_fpos)] + super()._get_fpos_ranking_functions(
+                partner
+            )
+        else:
+            return super()._get_fpos_ranking_functions(partner)

@@ -4,12 +4,13 @@ import warnings
 from odoo import _, api, models
 from odoo.exceptions import UserError
 
+_logger = logging.getLogger(__name__)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 try:
     from pyafipws.iibb import IIBB
 except ImportError:
     IIBB = None
-_logger = logging.getLogger(__name__)
+    _logger.info("Ocurrió un problema en la importación de la librería 'pyafipws.iibb'")
 
 
 class ResCompany(models.Model):
@@ -35,11 +36,9 @@ class ResCompany(models.Model):
     @api.model
     def get_arba_login_url(self, environment_type):
         if environment_type == "production":
-            arba_login_url = "https://dfe.arba.gov.ar/DomicilioElectronico/" "SeguridadCliente/dfeServicioConsulta.do"
+            arba_login_url = "https://dfe.arba.gov.ar/DomicilioElectronico/SeguridadCliente/dfeServicioConsulta.do"
         else:
-            arba_login_url = (
-                "https://dfe.test.arba.gov.ar/DomicilioElectronico" "/SeguridadCliente/dfeServicioConsulta.do"
-            )
+            arba_login_url = "https://dfe.test.arba.gov.ar/DomicilioElectronico/SeguridadCliente/dfeServicioConsulta.do"
         return arba_login_url
 
     def arba_connect(self):
@@ -75,6 +74,6 @@ class ResCompany(models.Model):
 
     @api.model
     def _process_message_error(self, ws):
-        message = ws.MensajeError
+        message = str(ws.MensajeError)
         message = message.replace("<![CDATA[", "").replace("]]/>", "")
         raise UserError(_("Padron ARBA: %s - %s (%s)") % (ws.CodigoError, message, ws.TipoError))

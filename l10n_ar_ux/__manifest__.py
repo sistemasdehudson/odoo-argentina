@@ -1,6 +1,6 @@
 {
     "name": "Argentinian Accounting UX",
-    "version": "18.0.1.3.0",
+    "version": "18.0.1.10.0",
     "category": "Localization/Argentina",
     "sequence": 14,
     "author": "ADHOC SA",
@@ -14,7 +14,6 @@
     "data": [
         "data/res_currency_data.xml",
         "data/account_account_tag_data.xml",
-        # 'views/portal_templates.xml',
         "views/res_partner_view.xml",
         "views/afip_concept_view.xml",
         "views/afip_activity_view.xml",
@@ -30,6 +29,8 @@
         "security/l10n_ar_ux_security.xml",
         "data/res_groups_data.xml",
         "views/account_fiscal_position_view.xml",
+        "views/account_account_views.xml",
+        "views/account_move_debit_note_view.xml",
     ],
     "demo": [
         "demo/res_partner_demo.xml",
@@ -37,5 +38,4 @@
     "installable": True,
     "auto_install": True,
     "application": False,
-    "post_init_hook": "post_init_hook",
 }
